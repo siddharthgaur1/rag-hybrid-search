@@ -148,7 +148,7 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def _aggregate_metrics(scores: list[RagEvalScore]) -> dict[str, float]:
+def aggregate_metrics(scores: list[RagEvalScore]) -> dict[str, float]:
     return {
         "answer_correctness": _mean([s.answer_correctness for s in scores]),
         "faithfulness": _mean([s.faithfulness for s in scores]),
@@ -184,9 +184,9 @@ async def run_eval_suite(
         run_id=run_id,
         chunking_strategy=chunking_strategy,
         total_cases=len(results),
-        aggregate=_aggregate_metrics(results),
-        by_category={cat: _aggregate_metrics(scores) for cat, scores in by_category.items()},
-        by_difficulty={diff: _aggregate_metrics(scores) for diff, scores in by_difficulty.items()},
+        aggregate=aggregate_metrics(results),
+        by_category={cat: aggregate_metrics(scores) for cat, scores in by_category.items()},
+        by_difficulty={diff: aggregate_metrics(scores) for diff, scores in by_difficulty.items()},
         total_cost_usd=0.0,  # populated by the caller from token-usage tracking; not measured within this function
         results=results,
     )

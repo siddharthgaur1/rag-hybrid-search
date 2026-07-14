@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-07-14T15:56:45Z",
+  "strategies": [
+    {
+      "strategy": "fixed_size",
+      "chunks_stored": 17,
+      "answer_correctness": 0.64060366210279,
+      "faithfulness": 0.7167165951209133,
+      "retrieval_relevance": 0.7379721775650513,
+      "citation_accuracy": 0.7558829431745714,
+      "unanswerable_detection": 0.9454545454545454,
+      "pass_rate": 0.6363636363636364,
+      "cost_usd": 0.0495
+    },
+    {
+      "strategy": "structure_aware",
+      "chunks_stored": 59,
+      "answer_correctness": 0.7638473330766421,
+      "faithfulness": 0.7714806664446467,
+      "retrieval_relevance": 0.785132366975755,
+      "citation_accuracy": 0.8335363560410338,
+      "unanswerable_detection": 0.9454545454545454,
+      "pass_rate": 0.7818181818181819,
+      "cost_usd": 0.0605
+    },
+    {
+      "strategy": "semantic",
+      "chunks_stored": 48,
+      "answer_correctness": 0.7369513537400934,
+      "faithfulness": 0.7895430519600641,
+      "retrieval_relevance": 0.7944954279949021,
+      "citation_accuracy": 0.8075421409641625,
+      "unanswerable_detection": 0.9090909090909091,
+      "pass_rate": 0.7818181818181819,
+      "cost_usd": 0.088
+    }
+  ],
+  "note": "mock data \u2014 no OpenAI calls were made; see scripts/generate_demo_data.py"
+}

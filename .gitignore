@@ -5,5 +5,4 @@ data/chroma_db/
 data/bm25_index/
 data/chunking_compare/
 data/eval_runs/
-data/chunking_comparison.json
 .venv/
