@@ -150,28 +150,5 @@ expensive to run over the whole corpus; running it only on fusion's top-20
 gets the accuracy where it matters without the cost of applying it
 everywhere.
 
-## Connection to Project 1 (llm-regression-detector)
-
-`src/evaluation/evaluator.py`'s `RagEvalScore` intentionally uses the same
-`test_case_id` / `passed` field names as `llm-regression-detector`'s
-`EvalScore`, so its comparator logic works on this project's eval output
-unmodified. `src/evaluation/comparator.py` and `src/evaluation/alerting.py`
-in this repo are vendored, byte-identical copies of
-`llm-regression-detector`'s versions (only the internal import path
-changed) — same regression/improvement detection, same
-warning/critical thresholds, same 7-run moving-average drift check, same
-Slack alert format.
-
-`src/evaluation/run_gate.py` is this project's equivalent of that project's
-`runner.py`: run the golden QA suite, save the run, diff against the most
-recent prior run via `compare_runs()`, exit 1 on CRITICAL. `.github/workflows/eval.yml`
-runs it on every push/PR to `master` that touches `docs/**`,
-`src/evaluation/golden_qa.json`, `src/ingestion/chunker.py`, or
-`src/generation/**` — the same "does this change make quality worse"
-question Project 1 asks of a prompt change, asked here of a corpus edit, a
-chunking strategy tweak, or a generation prompt change.
-
-Deliberately vendored rather than imported as a package dependency: two
-small, stable files duplicated is simpler than a cross-repo dependency for
-a portfolio project, at the cost of needing to manually re-sync if
+g to manually re-sync if
 `comparator.py`'s thresholds ever change in Project 1.
