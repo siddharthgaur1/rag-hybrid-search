@@ -175,3 +175,8 @@ Deliberately vendored rather than imported as a package dependency: two
 small, stable files duplicated is simpler than a cross-repo dependency for
 a portfolio project, at the cost of needing to manually re-sync if
 `comparator.py`'s thresholds ever change in Project 1.
+
+## Related projects
+
+- [llm-regression-detector](https://github.com/siddharthgaur1/llm-regression-detector) — the eval-gate CI pattern this repo reuses (see above).
+- [ipo-gmp](https://github.com/siddharthgaur1/ipo-gmp) — XGBoost IPO listing-return predictor.
