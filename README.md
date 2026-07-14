@@ -154,17 +154,24 @@ everywhere.
 
 `src/evaluation/evaluator.py`'s `RagEvalScore` intentionally uses the same
 `test_case_id` / `passed` field names as `llm-regression-detector`'s
-`EvalScore`. That means:
+`EvalScore`, so its comparator logic works on this project's eval output
+unmodified. `src/evaluation/comparator.py` and `src/evaluation/alerting.py`
+in this repo are vendored, byte-identical copies of
+`llm-regression-detector`'s versions (only the internal import path
+changed) — same regression/improvement detection, same
+warning/critical thresholds, same 7-run moving-average drift check, same
+Slack alert format.
 
-- `llm-regression-detector`'s `comparator.py` (regression/improvement
-  detection, warning/critical thresholds, 7-run moving-average drift) works
-  unmodified against a RAG eval run's `results` list — same shape in, same
-  diff logic out. Track a chunking-strategy or prompt change here the same
-  way that project tracks a classifier prompt change.
-- The same `alerting.py` Slack webhook integration applies without
-  modification for RAG eval regressions — same `ComparisonResult` shape in.
+`src/evaluation/run_gate.py` is this project's equivalent of that project's
+`runner.py`: run the golden QA suite, save the run, diff against the most
+recent prior run via `compare_runs()`, exit 1 on CRITICAL. `.github/workflows/eval.yml`
+runs it on every push/PR to `master` that touches `docs/**`,
+`src/evaluation/golden_qa.json`, `src/ingestion/chunker.py`, or
+`src/generation/**` — the same "does this change make quality worse"
+question Project 1 asks of a prompt change, asked here of a corpus edit, a
+chunking strategy tweak, or a generation prompt change.
 
-This repo doesn't vendor a copy of that code (avoiding two sources of
-truth); wiring it up means importing `llm-regression-detector` as a
-dependency or copying `comparator.py`/`alerting.py` in, whichever fits your
-repo layout preference.
+Deliberately vendored rather than imported as a package dependency: two
+small, stable files duplicated is simpler than a cross-repo dependency for
+a portfolio project, at the cost of needing to manually re-sync if
+`comparator.py`'s thresholds ever change in Project 1.

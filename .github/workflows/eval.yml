@@ -1,0 +1,66 @@
+name: RAG Eval
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "docs/**"
+      - "src/evaluation/golden_qa.json"
+      - "src/ingestion/chunker.py"
+      - "src/generation/**"
+  pull_request:
+    branches: [master]
+    paths:
+      - "docs/**"
+      - "src/evaluation/golden_qa.json"
+      - "src/ingestion/chunker.py"
+      - "src/generation/**"
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ingest corpus
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python -c "
+          import asyncio;
+          from openai import AsyncOpenAI;
+          from src.ingestion.pipeline import ingest_corpus;
+          asyncio.run(ingest_corpus(AsyncOpenAI(), 'structure_aware'))"
+
+      - name: Run eval gate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m src.evaluation.run_gate --chunking-strategy structure_aware --slack
+
+      - name: Post PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const runsDir = 'data/eval_runs';
+            const runs = fs.readdirSync(runsDir).sort();
+            const latest = runs[runs.length - 1];
+            const data = JSON.parse(fs.readFileSync(`${runsDir}/${latest}`, 'utf8'));
+            const passRate = (data.aggregate.pass_rate * 100).toFixed(1);
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `RAG eval run \`${data.run_id}\`: pass rate ${passRate}%`,
+            });
