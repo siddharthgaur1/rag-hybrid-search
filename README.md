@@ -1,0 +1,163 @@
+# rag-hybrid-search
+
+A production-shaped RAG pipeline over internal documentation: dense vector
+search (ChromaDB) fused with sparse BM25 keyword search via Reciprocal Rank
+Fusion, a cross-encoder reranker on top, grounded generation with inline
+`[N]` citations, and an LLM-as-judge citation verifier that catches
+hallucinated citations before they reach the user. Exists to demonstrate the
+retrieval-quality tradeoffs (hybrid vs dense-only, chunking strategy vs
+chunking strategy) that "just call an embeddings API" glosses over.
+
+## Architecture
+
+```
+docs/ (markdown corpus)
+   │
+   ▼
+┌───────────────┐     ┌────────────────┐
+│  loader.py    │────▶│  chunker.py    │  fixed_size / structure_aware / semantic
+└───────────────┘     └───────┬────────┘
+                               ▼
+                       ┌────────────────┐
+                       │  embedder.py   │  text-embedding-3-small, batched,
+                       │                │  dedup @ cosine > 0.95
+                       └───────┬────────┘
+                    ┌──────────┴──────────┐
+                    ▼                     ▼
+             ┌────────────┐       ┌────────────┐
+             │  ChromaDB  │       │ BM25 index │
+             └─────┬──────┘       └─────┬──────┘
+                    │                    │
+                    ▼                    ▼
+             ┌────────────┐       ┌────────────┐
+             │  dense.py  │       │ sparse.py  │
+             └─────┬──────┘       └─────┬──────┘
+                    └─────────┬──────────┘
+                               ▼
+                       ┌────────────────┐
+                       │  fusion.py     │  Reciprocal Rank Fusion (k=60,
+                       │                │  0.7 dense / 0.3 sparse default)
+                       └───────┬────────┘
+                               ▼
+                       ┌────────────────┐
+                       │  reranker.py   │  cross-encoder/ms-marco-MiniLM-L-6-v2
+                       │                │  top-20 -> top-5
+                       └───────┬────────┘
+                               ▼
+                       ┌────────────────┐
+                       │  generator.py  │  GPT-4o, numbered context blocks,
+                       │                │  inline [N] citations
+                       └───────┬────────┘
+                               ▼
+              ┌────────────────┴────────────────┐
+              ▼                                  ▼
+      ┌────────────────┐               ┌────────────────┐
+      │  citation.py   │               │ confidence.py  │
+      │  LLM-judge      │              │  0.3 retrieval +
+      │  verifies each  │              │  0.4 citation +
+      │  [N] claim      │              │  0.3 completeness
+      └────────────────┘               └────────────────┘
+
+src/api/main.py (FastAPI) and dashboard/app.py (Streamlit) both call the
+shared src/rag_pipeline.py so the two surfaces can't drift apart.
+```
+
+## Setup
+
+```bash
+git clone <repo-url> && cd rag-hybrid-search
+cp .env.example .env        # OPENAI_API_KEY required
+docker compose up            # api on :8000, dashboard on :8501
+```
+
+First run needs the corpus ingested — either hit `POST /v1/ingest` per file,
+or run the one-shot local ingestion:
+
+```bash
+python -c "
+import asyncio
+from openai import AsyncOpenAI
+from src.ingestion.pipeline import ingest_corpus
+asyncio.run(ingest_corpus(AsyncOpenAI(), 'structure_aware'))
+"
+```
+
+## Running an eval
+
+```bash
+python -m src.evaluation.chunking_compare
+```
+
+Ingests the corpus three times (once per chunking strategy, into isolated
+indexes under `data/chunking_compare/`), runs all 55 golden Q&A cases
+against each, and writes `data/chunking_comparison.json` — the table the
+Streamlit dashboard's "Eval Results" tab reads.
+
+For a single strategy without the full three-way comparison, call
+`src.evaluation.evaluator.run_eval_suite()` directly with one
+`chunking_strategy`.
+
+## Query API
+
+```bash
+curl -X POST localhost:8000/v1/ask -H "Content-Type: application/json" \
+  -d '{"question": "What is the API rate limit?", "top_k": 5}'
+```
+
+Full interactive docs at `localhost:8000/docs`. `GET /health` checks Chroma
+connectivity and whether a BM25 index has been built; `GET /v1/stats`
+returns index size and chunking-strategy distribution.
+
+## Design decisions
+
+**Hybrid retrieval, not dense-only.** Dense embeddings are strong on
+paraphrase and weak on exact tokens — error codes (`AUTH_INVALID_KEY`),
+config keys (`WORKER_CONCURRENCY`), version numbers (`v2.0.0`) are exactly
+the terms a support corpus is full of and exactly what cosine similarity
+tends to blur together. BM25 catches those verbatim; RRF (rank-based, not
+score-based) combines the two without needing dense similarity and BM25
+score to live on comparable scales.
+
+**Citation verification is a separate LLM call from generation, not trusted
+output.** A generation model asked to cite sources will confidently cite
+the wrong one — it's optimizing for a plausible-looking `[N]`, not for
+whether chunk N actually supports the adjacent sentence. Verifying
+post-hoc, one claim/chunk pair at a time, is the only way to catch that
+short of grounding the generation step in something stronger than "please
+cite your sources."
+
+**Semantic chunking's sentence similarity uses a local
+sentence-transformer, not the OpenAI embedding model used for retrieval.**
+Semantic chunking needs an embedding for *every sentence* in the corpus
+purely to decide where to cut — that's a lot of paid API calls for a
+decision that only needs relative similarity, not the same embedding space
+used at query time. A small local model is free and fast for that specific
+job; the actual chunks still get embedded with `text-embedding-3-small` for
+retrieval.
+
+**Reranking is a distinct stage from fusion, not folded into RRF weights.**
+RRF is rank-based and cheap — good for getting a wide net of 20 plausible
+candidates without needing calibrated cross-model scores. A cross-encoder
+that jointly attends over (query, chunk) pairs is far more accurate but too
+expensive to run over the whole corpus; running it only on fusion's top-20
+gets the accuracy where it matters without the cost of applying it
+everywhere.
+
+## Connection to Project 1 (llm-regression-detector)
+
+`src/evaluation/evaluator.py`'s `RagEvalScore` intentionally uses the same
+`test_case_id` / `passed` field names as `llm-regression-detector`'s
+`EvalScore`. That means:
+
+- `llm-regression-detector`'s `comparator.py` (regression/improvement
+  detection, warning/critical thresholds, 7-run moving-average drift) works
+  unmodified against a RAG eval run's `results` list — same shape in, same
+  diff logic out. Track a chunking-strategy or prompt change here the same
+  way that project tracks a classifier prompt change.
+- The same `alerting.py` Slack webhook integration applies without
+  modification for RAG eval regressions — same `ComparisonResult` shape in.
+
+This repo doesn't vendor a copy of that code (avoiding two sources of
+truth); wiring it up means importing `llm-regression-detector` as a
+dependency or copying `comparator.py`/`alerting.py` in, whichever fits your
+repo layout preference.

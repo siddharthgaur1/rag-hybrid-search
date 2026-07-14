@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./docs:/app/docs
+    ports:
+      - "8000:8000"
+
+  dashboard:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./docs:/app/docs
+    ports:
+      - "8501:8501"
+    entrypoint: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0"]
