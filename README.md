@@ -1,5 +1,8 @@
 # rag-hybrid-search
 
+<!-- Replace YOUR_RAILWAY_URL once deployed (see Deployment section) -->
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Railway-purple)](YOUR_RAILWAY_URL)
+
 A production-shaped RAG pipeline over internal documentation: dense vector
 search (ChromaDB) fused with sparse BM25 keyword search via Reciprocal Rank
 Fusion, a cross-encoder reranker on top, grounded generation with inline
@@ -58,8 +61,11 @@ docs/ (markdown corpus)
       │  [N] claim      │              │  0.3 completeness
       └────────────────┘               └────────────────┘
 
-src/api/main.py (FastAPI) and dashboard/app.py (Streamlit) both call the
-shared src/rag_pipeline.py so the two surfaces can't drift apart.
+src/api/main.py (FastAPI) is the only caller of src/rag_pipeline.py.
+dashboard/app.py (Streamlit) talks to the API over HTTP (API_BASE_URL) rather
+than importing the pipeline directly, so it works whether it's sharing a
+process with the API (docker compose) or deployed as a separate Railway
+service with its own filesystem.
 ```
 
 ## Setup
@@ -114,6 +120,40 @@ curl -X POST localhost:8000/v1/ask -H "Content-Type: application/json" \
 Full interactive docs at `localhost:8000/docs`. `GET /health` checks Chroma
 connectivity and whether a BM25 index has been built; `GET /v1/stats`
 returns index size and chunking-strategy distribution.
+
+The live demo is pre-loaded with fictional internal documentation (`docs/`).
+To index your own docs, call `POST /v1/ingest` with a file path relative to
+the docs root.
+
+## Deployment
+
+### Deploy to Railway (one-click)
+
+1. Fork this repo
+2. Create a new project on [railway.app](https://railway.app)
+3. Connect your fork
+4. Add environment variables (see `.env.railway.example`)
+5. Railway auto-deploys on every push
+
+### Deploy the API service
+
+- New Service → GitHub Repo → select this repo
+- Root directory: `/` (repo root) — it builds from the top-level `Dockerfile`
+- Add env vars from `.env.railway.example` (API section)
+- On first boot the API ingests the `docs/` corpus automatically; `GET /health`
+  reports `indexes_ready: false` until that finishes
+
+### Deploy the dashboard service
+
+- New Service → GitHub Repo → same repo
+- Set the Dockerfile path to `dashboard/Dockerfile` (build context stays the
+  repo root, so it can still `COPY requirements.txt` and `dashboard/app.py`)
+- Add `API_BASE_URL` pointing at the API service's public Railway URL
+
+Railway gives each service its own filesystem/volume, so the dashboard talks
+to the API over HTTP (`API_BASE_URL`) rather than reading Chroma/BM25 files
+directly — that's why both services need to be deployed and pointed at each
+other, not just the API.
 
 ## Design decisions
 

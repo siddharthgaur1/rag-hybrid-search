@@ -11,9 +11,12 @@ services:
   dashboard:
     build: .
     env_file: .env
+    environment:
+      - API_BASE_URL=http://api:8000
     volumes:
       - ./data:/app/data
-      - ./docs:/app/docs
     ports:
       - "8501:8501"
     entrypoint: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0"]
+    depends_on:
+      - api

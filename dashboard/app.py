@@ -1,36 +1,63 @@
-"""Streamlit dashboard: ask questions, browse the index, review eval results, watch system stats."""
+"""Streamlit dashboard: ask questions, browse the index, review eval results, watch system stats.
+
+Talks to the FastAPI service over HTTP (API_BASE_URL) rather than importing
+the pipeline/Chroma directly — on Railway the API and dashboard are separate
+services with separate filesystems, so this is the only surface that can see
+the API's live index.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import json
-import sys
+import os
 from pathlib import Path
 
-import chromadb
+import httpx
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
 load_dotenv()
 
-from src.config import settings  # noqa: E402
-from src.ingestion.chunker import ChunkingStrategy, chunk_document, local_sentence_similarity_fn  # noqa: E402
-from src.ingestion.embedder import embed_and_store  # noqa: E402
-from src.ingestion.loader import load_document, load_documents  # noqa: E402
-from src.rag_pipeline import ask  # noqa: E402
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
 
 st.set_page_config(page_title="RAG Hybrid Search", layout="wide")
-client = AsyncOpenAI()
 
 
-def run_async(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+def api_get(path: str, **kwargs) -> httpx.Response | None:
+    try:
+        return httpx.get(f"{API_BASE_URL}{path}", timeout=10, **kwargs)
+    except httpx.HTTPError:
+        return None
 
+
+def api_post(path: str, **kwargs) -> httpx.Response | None:
+    try:
+        return httpx.post(f"{API_BASE_URL}{path}", timeout=60, **kwargs)
+    except httpx.HTTPError:
+        return None
+
+
+health_response = api_get("/health")
+health = health_response.json() if health_response is not None and health_response.status_code == 200 else None
+
+status_col, url_col = st.columns([1, 3])
+if health is None:
+    status_col.error("API unreachable")
+elif not health["indexes_ready"]:
+    status_col.warning("Setting up indexes, please wait...")
+else:
+    status_col.success("API connected")
+url_col.caption(f"API: {API_BASE_URL}")
+
+if health is None:
+    st.error(f"Could not reach the API at {API_BASE_URL}. Check API_BASE_URL and that the API service is running.")
+    st.stop()
+if not health["indexes_ready"]:
+    st.info("The API is still ingesting the docs corpus on first boot. This page will work once indexing finishes — refresh in a bit.")
+    st.stop()
 
 tab_ask, tab_docs, tab_eval, tab_stats = st.tabs(["Ask", "Documents", "Eval Results", "System Stats"])
 
@@ -44,57 +71,64 @@ with tab_ask:
 
     if st.button("Ask", type="primary") and question:
         with st.spinner("Retrieving and generating..."):
-            hybrid_result = run_async(ask(question, client, top_k=top_k, use_sparse=True))
-            dense_result = run_async(ask(question, client, top_k=top_k, use_sparse=False)) if compare_toggle else None
+            hybrid_response = api_post("/v1/ask", json={"question": question, "top_k": top_k, "use_sparse": True})
+            dense_response = api_post("/v1/ask", json={"question": question, "top_k": top_k, "use_sparse": False}) if compare_toggle else None
 
-        cols = st.columns(2) if compare_toggle else [st.container()]
-        for col, result, label in zip(cols, [hybrid_result, dense_result], ["Hybrid", "Dense-only"]):
-            if result is None:
-                continue
-            with col:
-                st.subheader(label)
-                st.write(result.answer)
-                st.caption(f"Verified citations: {result.verified_citations} | Unsupported: {result.unsupported_citations}")
-                st.caption(f"Latency: {result.latency_ms:.0f}ms | Est. cost: ${result.cost_estimate_usd:.5f}")
+        if hybrid_response is None or hybrid_response.status_code != 200:
+            st.error("The API request failed. Is the API service up?")
+        else:
+            results = [hybrid_response.json()]
+            labels = ["Hybrid"]
+            if dense_response is not None and dense_response.status_code == 200:
+                results.append(dense_response.json())
+                labels.append("Dense-only")
 
-                conf = result.confidence
-                conf_df = pd.DataFrame(
-                    {
-                        "signal": ["retrieval", "citation", "completeness", "composite"],
-                        "score": [conf.retrieval_confidence, conf.citation_coverage, conf.answer_completeness, conf.composite],
-                    }
-                )
-                st.plotly_chart(px.bar(conf_df, x="signal", y="score", range_y=[0, 1]), use_container_width=True)
+            cols = st.columns(2) if len(results) == 2 else [st.container()]
+            for col, result, label in zip(cols, results, labels):
+                with col:
+                    st.subheader(label)
+                    st.write(result["answer"])
+                    st.caption(f"Verified citations: {result['citations']} | Unsupported: {result['unsupported_citations']}")
+                    st.caption(f"Latency: {result['latency_ms']:.0f}ms | Est. cost: ${result['cost_estimate']:.5f}")
 
-                st.write("Retrieved chunks:")
-                for i, chunk in enumerate(result.chunks_used, start=1):
-                    with st.expander(f"[{i}] {chunk.chunk_id} (rerank score {chunk.rerank_score:.3f})"):
-                        st.write(chunk.content)
+                    conf = result["confidence_scores"]
+                    conf_df = pd.DataFrame(
+                        {
+                            "signal": ["retrieval", "citation", "completeness", "composite"],
+                            "score": [conf["retrieval_confidence"], conf["citation_coverage"], conf["answer_completeness"], conf["composite"]],
+                        }
+                    )
+                    st.plotly_chart(px.bar(conf_df, x="signal", y="score", range_y=[0, 1]), use_container_width=True)
+
+                    st.write("Retrieved chunks:")
+                    for i, chunk in enumerate(result["chunks_used"], start=1):
+                        with st.expander(f"[{i}] {chunk['chunk_id']} (rerank score {chunk['rerank_score']:.3f})"):
+                            st.write(chunk["content"])
 
 with tab_docs:
     st.header("Indexed documents")
-    try:
-        chroma_client = chromadb.PersistentClient(path=settings.chroma_db_path)
-        collection = chroma_client.get_or_create_collection("chunks")
-        if collection.count() > 0:
-            metadatas = collection.get()["metadatas"]
-            doc_df = pd.DataFrame(metadatas)["file_path"].value_counts().reset_index()
-            doc_df.columns = ["file_path", "chunk_count"]
-            st.dataframe(doc_df, use_container_width=True)
+    docs_response = api_get("/v1/documents")
+    if docs_response is not None and docs_response.status_code == 200:
+        docs = docs_response.json()
+        if docs:
+            st.dataframe(pd.DataFrame(docs), use_container_width=True)
         else:
             st.info("No documents indexed yet.")
-    except Exception as e:
-        st.warning(f"Could not read index: {e}")
+    else:
+        st.warning("Could not reach the API to list documents.")
 
-    st.subheader("Re-ingest corpus")
-    reingest_strategy: ChunkingStrategy = st.selectbox("Strategy", ["structure_aware", "fixed_size", "semantic"], key="reingest")
-    if st.button("Re-ingest full corpus with this strategy"):
+    st.subheader("Ingest a document")
+    st.caption("The live demo is pre-loaded; use this to add more files from the API's docs/ corpus.")
+    ingest_file_path = st.text_input("File path (relative to docs/, e.g. 'engineering/faq.md')")
+    ingest_strategy = st.selectbox("Strategy", ["structure_aware", "fixed_size", "semantic"], key="ingest_strategy")
+    if st.button("Ingest") and ingest_file_path:
         with st.spinner("Ingesting..."):
-            documents = load_documents(settings.docs_path)
-            similarity_fn = local_sentence_similarity_fn() if reingest_strategy == "semantic" else None
-            chunks = [c for doc in documents for c in chunk_document(doc, reingest_strategy, similarity_fn)]
-            stats = run_async(embed_and_store(chunks, client))
-        st.success(f"Stored {stats.chunks_stored} chunks, skipped {stats.duplicates_skipped} duplicates, cost ${stats.embedding_cost_usd:.4f}")
+            ingest_response = api_post("/v1/ingest", json={"file_path": ingest_file_path, "chunking_strategy": ingest_strategy})
+        if ingest_response is not None and ingest_response.status_code == 200:
+            stats = ingest_response.json()
+            st.success(f"Stored {stats['chunks_created']} chunks, skipped {stats['duplicates_skipped']} duplicates, cost ${stats['cost']:.4f}")
+        else:
+            st.error("Ingestion failed.")
 
 with tab_eval:
     st.header("Evaluation results")
@@ -126,17 +160,17 @@ with tab_eval:
 
 with tab_stats:
     st.header("System stats")
-    try:
-        chroma_client = chromadb.PersistentClient(path=settings.chroma_db_path)
-        collection = chroma_client.get_or_create_collection("chunks")
-        total_chunks = collection.count()
-        st.metric("Total chunks", total_chunks)
-        if total_chunks > 0:
-            metadatas = collection.get()["metadatas"]
-            st.metric("Total documents", len({m["file_path"] for m in metadatas}))
-            strategy_counts = pd.Series([m["strategy_used"] for m in metadatas]).value_counts()
-            st.plotly_chart(px.pie(values=strategy_counts.values, names=strategy_counts.index, title="Strategy distribution"), use_container_width=True)
-    except Exception as e:
-        st.warning(f"Could not read index: {e}")
+    stats_response = api_get("/v1/stats")
+    if stats_response is not None and stats_response.status_code == 200:
+        stats = stats_response.json()
+        st.metric("Total chunks", stats["total_chunks"])
+        st.metric("Total documents", stats["total_documents"])
+        if stats["strategy_distribution"]:
+            st.plotly_chart(
+                px.pie(values=list(stats["strategy_distribution"].values()), names=list(stats["strategy_distribution"].keys()), title="Strategy distribution"),
+                use_container_width=True,
+            )
+    else:
+        st.warning("Could not reach the API for system stats.")
 
     st.caption("Cost tracking and latency percentiles populate once eval runs or /v1/ask calls have been logged to data/eval_runs/.")

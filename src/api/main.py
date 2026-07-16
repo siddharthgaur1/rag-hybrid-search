@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -19,7 +20,9 @@ from src.generation.confidence import ConfidenceScores
 from src.ingestion.chunker import ChunkingStrategy, chunk_document, local_sentence_similarity_fn
 from src.ingestion.embedder import IngestionStats, embed_and_store
 from src.ingestion.loader import load_document
+from src.ingestion.pipeline import ingest_corpus
 from src.rag_pipeline import ask as run_ask
+from src.retrieval.reranker import RerankedResult
 from src.retrieval.sparse import bm25_index_exists
 
 _request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
@@ -37,6 +40,28 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RAG Hybrid Search", version="1.0.0")
 client = AsyncOpenAI()
+app.state.indexes_ready = False
+
+
+def _indexes_exist() -> bool:
+    chroma_has_chunks = chromadb.PersistentClient(path=settings.chroma_db_path).get_or_create_collection("chunks").count() > 0
+    return chroma_has_chunks and bm25_index_exists(settings.bm25_index_path)
+
+
+async def _seed_indexes() -> None:
+    logger.info("First boot detected, ingesting docs corpus...")
+    await ingest_corpus(client, settings.default_chunking_strategy)
+    app.state.indexes_ready = True
+    logger.info("Corpus ingestion complete, indexes ready.")
+
+
+@app.on_event("startup")
+async def seed_indexes_on_first_boot() -> None:
+    if _indexes_exist():
+        app.state.indexes_ready = True
+        return
+    # Run in the background so /health stays responsive (indexes_ready=false) while this ingests.
+    asyncio.create_task(_seed_indexes())
 
 
 @app.middleware("http")
@@ -57,6 +82,7 @@ async def request_id_middleware(request: Request, call_next):
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1)
     top_k: int = Field(5, ge=1, le=20)
+    use_sparse: bool = Field(True, description="False for dense-only retrieval (dashboard's hybrid-vs-dense-only comparison).")
     chunking_strategy: str = Field(default_factory=lambda: settings.default_chunking_strategy)
 
 
@@ -65,7 +91,7 @@ class AskResponse(BaseModel):
     citations: list[int]
     unsupported_citations: list[int]
     confidence_scores: ConfidenceScores
-    chunks_used: list[str]
+    chunks_used: list[RerankedResult]
     latency_ms: float
     cost_estimate: float
 
@@ -97,17 +123,18 @@ class HealthResponse(BaseModel):
     status: str
     chroma_connected: bool
     bm25_loaded: bool
+    indexes_ready: bool
 
 
 @app.post("/v1/ask", response_model=AskResponse)
 async def ask_endpoint(body: AskRequest) -> AskResponse:
-    result = await run_ask(body.question, client, top_k=body.top_k)
+    result = await run_ask(body.question, client, top_k=body.top_k, use_sparse=body.use_sparse)
     return AskResponse(
         answer=result.answer,
         citations=result.verified_citations,
         unsupported_citations=result.unsupported_citations,
         confidence_scores=result.confidence,
-        chunks_used=[c.chunk_id for c in result.chunks_used],
+        chunks_used=result.chunks_used,
         latency_ms=result.latency_ms,
         cost_estimate=result.cost_estimate_usd,
     )
@@ -160,4 +187,6 @@ async def health_endpoint() -> HealthResponse:
     bm25_loaded = bm25_index_exists(settings.bm25_index_path)
 
     status = "ok" if chroma_connected else "degraded"
-    return HealthResponse(status=status, chroma_connected=chroma_connected, bm25_loaded=bm25_loaded)
+    return HealthResponse(
+        status=status, chroma_connected=chroma_connected, bm25_loaded=bm25_loaded, indexes_ready=app.state.indexes_ready
+    )
