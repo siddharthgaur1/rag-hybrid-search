@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.generation.citation import UNSUPPORTED_THRESHOLD, extract_claim_citations, verify_citations
-from src.generation.confidence import score_confidence
 from src.generation.generator import generate_answer
 from src.retrieval.dense import dense_search
 from src.retrieval.fusion import reciprocal_rank_fusion

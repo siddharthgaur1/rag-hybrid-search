@@ -15,7 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-from src.config import ROOT, settings
+from src.config import ROOT
 from src.ingestion.chunker import ChunkingStrategy
 from src.ingestion.pipeline import ingest_corpus
 from src.evaluation.evaluator import run_eval_suite

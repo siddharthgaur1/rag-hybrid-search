@@ -1,7 +1,6 @@
 # rag-hybrid-search
 
-<!-- Replace YOUR_RAILWAY_URL once deployed (see Deployment section) -->
-[![Live Demo](https://img.shields.io/badge/Live_Demo-Railway-purple)](YOUR_RAILWAY_URL)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A production-shaped RAG pipeline over internal documentation: dense vector
 search (ChromaDB) fused with sparse BM25 keyword search via Reciprocal Rank
