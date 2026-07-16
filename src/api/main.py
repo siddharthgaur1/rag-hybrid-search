@@ -39,7 +39,10 @@ logging.getLogger().addFilter(_RequestIdFilter())
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RAG Hybrid Search", version="1.0.0")
-client = AsyncOpenAI()
+# `or None` lets the SDK fall back to OPENAI_API_KEY in the environment (how
+# docker-compose supplies it); settings carries it when it comes from a .env file,
+# which the SDK cannot see on its own.
+client = AsyncOpenAI(api_key=settings.openai_api_key or None)
 app.state.indexes_ready = False
 
 
