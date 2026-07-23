@@ -1,6 +1,43 @@
 # rag-hybrid-search
 
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+**Hybrid dense + BM25 retrieval with RRF fusion, a cross-encoder reranker, cited generation, and an LLM-judge citation verifier. Runs fully free/offline on Ollama.**
+
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Runs free on Ollama](https://img.shields.io/badge/runs%20free-Ollama%20(offline)-brightgreen)](#run-with-zero-paid-keys)
+
+> **Live demo:** not a zero-key click-through — it needs an ingested corpus and a
+> model for embeddings + generation. It runs **fully offline and free** on a local
+> Ollama (which serves both embeddings and chat), or on OpenAI with a key. See below.
+
+## Run with zero paid keys
+
+The pipeline speaks the OpenAI wire format for both embeddings and generation, so a
+single `OPENAI_BASE_URL` points it at any compatible endpoint. A local **Ollama**
+is the fully-free path — it serves `/v1/embeddings` *and* `/v1/chat/completions`:
+
+```bash
+git clone https://github.com/siddharthgaur1/rag-hybrid-search
+cd rag-hybrid-search
+cp .env.example .env
+
+# install https://ollama.com, then:
+ollama pull nomic-embed-text        # embeddings
+ollama pull llama3.2                 # generation
+# in .env:
+OPENAI_BASE_URL=http://localhost:11434/v1
+EMBEDDING_MODEL=nomic-embed-text
+GENERATION_MODEL=llama3.2
+JUDGE_MODEL=llama3.2
+
+docker compose up --build            # dashboard :8501 · API :8000
+```
+
+The reranker (`cross-encoder/ms-marco-MiniLM-L-6-v2`) is already a local model, so
+with Ollama the entire retrieve-rerank-generate-verify loop runs with no paid API
+and no data leaving the machine. Prefer OpenAI? Set `OPENAI_API_KEY` and leave
+`OPENAI_BASE_URL` empty. Security notes (embedded-Chroma, first-party pickle, RAG
+injection): [SECURITY.md](SECURITY.md).
+
+---
 
 A production-shaped RAG pipeline over internal documentation: dense vector
 search (ChromaDB) fused with sparse BM25 keyword search via Reciprocal Rank
