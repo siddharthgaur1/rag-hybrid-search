@@ -6,3 +6,8 @@ data/bm25_index/
 data/chunking_compare/
 data/eval_runs/
 .venv/
+.serena/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.DS_Store
