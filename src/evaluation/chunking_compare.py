@@ -15,7 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-from src.config import ROOT
+from src.config import ROOT, settings
 from src.ingestion.chunker import ChunkingStrategy
 from src.ingestion.pipeline import ingest_corpus
 from src.evaluation.evaluator import run_eval_suite
@@ -34,7 +34,7 @@ def _index_paths_for(strategy: str) -> tuple[Path, Path]:
 async def compare_chunking_strategies() -> dict:
     """Ingest + eval each strategy in isolated indexes, and write chunking_comparison.json."""
     load_dotenv()
-    client = AsyncOpenAI()
+    client = AsyncOpenAI(base_url=settings.openai_base_url or None)
     golden_qa = json.loads((ROOT / "src" / "evaluation" / "golden_qa.json").read_text(encoding="utf-8"))
 
     report_rows = []

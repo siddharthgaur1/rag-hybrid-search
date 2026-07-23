@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     openai_api_key: str = ""
+    # Any OpenAI-compatible endpoint. Empty = OpenAI. A local Ollama
+    # (http://localhost:11434/v1) is the fully-free path: it serves BOTH the
+    # /v1/embeddings and /v1/chat/completions this pipeline needs, so retrieval
+    # and generation both run offline with no paid key. Set the model names to
+    # local ones too, e.g. embedding_model=nomic-embed-text, generation_model=llama3.2.
+    openai_base_url: str = ""
     embedding_model: str = "text-embedding-3-small"
     generation_model: str = "gpt-4o"
     judge_model: str = "gpt-4o"

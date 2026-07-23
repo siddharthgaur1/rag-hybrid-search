@@ -66,7 +66,7 @@ async def main_async(args: argparse.Namespace) -> int:
     Returns:
         Process exit code: 1 on CRITICAL regression, else 0.
     """
-    client = AsyncOpenAI()
+    client = AsyncOpenAI(base_url=settings.openai_base_url or None)
     golden_qa = load_golden_dataset()
     run_id = f"{args.chunking_strategy}_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
 
