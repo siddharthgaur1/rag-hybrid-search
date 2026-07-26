@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from src.ingestion.chunker import chunk_document, chunk_fixed_size, chunk_semantic, chunk_structure_aware, count_tokens
+from src.ingestion.chunker import (
+    chunk_document,
+    chunk_fixed_size,
+    chunk_semantic,
+    chunk_structure_aware,
+    count_tokens,
+)
 from src.ingestion.embedder import embed_and_store
-from src.ingestion.loader import Document
 from tests.conftest import make_embedding_response
 
 

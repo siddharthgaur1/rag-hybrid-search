@@ -2,7 +2,7 @@
 
 **Hybrid dense + BM25 retrieval with RRF fusion, a cross-encoder reranker, cited generation, and an LLM-judge citation verifier. Runs fully free/offline on Ollama.**
 
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Runs free on Ollama](https://img.shields.io/badge/runs%20free-Ollama%20(offline)-brightgreen)](#run-with-zero-paid-keys)
+[![CI](https://github.com/siddharthgaur1/rag-hybrid-search/actions/workflows/ci.yml/badge.svg)](https://github.com/siddharthgaur1/rag-hybrid-search/actions/workflows/ci.yml) [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Runs free on Ollama](https://img.shields.io/badge/runs%20free-Ollama%20(offline)-brightgreen)](#run-with-zero-paid-keys)
 
 > **Live demo:** not a zero-key click-through — it needs an ingested corpus and a
 > model for embeddings + generation. It runs **fully offline and free** on a local

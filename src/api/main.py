@@ -17,7 +17,11 @@ from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.generation.confidence import ConfidenceScores
-from src.ingestion.chunker import ChunkingStrategy, chunk_document, local_sentence_similarity_fn
+from src.ingestion.chunker import (
+    ChunkingStrategy,
+    chunk_document,
+    local_sentence_similarity_fn,
+)
 from src.ingestion.embedder import IngestionStats, embed_and_store
 from src.ingestion.loader import load_document
 from src.ingestion.pipeline import ingest_corpus

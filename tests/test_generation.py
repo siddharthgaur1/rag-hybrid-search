@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from src.generation.generator import NO_ANSWER_PHRASE, _build_context_blocks, generate_answer, parse_citations
+from src.generation.generator import (
+    NO_ANSWER_PHRASE,
+    _build_context_blocks,
+    generate_answer,
+    parse_citations,
+)
 from src.retrieval.reranker import RerankedResult
 from tests.conftest import make_chat_response
 

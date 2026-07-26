@@ -9,7 +9,11 @@ from pathlib import Path
 from openai import AsyncOpenAI
 
 from src.config import settings
-from src.ingestion.chunker import ChunkingStrategy, chunk_document, local_sentence_similarity_fn
+from src.ingestion.chunker import (
+    ChunkingStrategy,
+    chunk_document,
+    local_sentence_similarity_fn,
+)
 from src.ingestion.embedder import IngestionStats, embed_and_store
 from src.ingestion.loader import load_documents
 

@@ -10,9 +10,14 @@ from src.generation.citation import (
     extract_claim_citations,
     verify_citations,
 )
-from src.generation.confidence import JudgeCompletenessScore, citation_coverage, retrieval_confidence, score_confidence
+from src.generation.confidence import (
+    JudgeCompletenessScore,
+    citation_coverage,
+    retrieval_confidence,
+    score_confidence,
+)
 from src.retrieval.reranker import RerankedResult
-from tests.conftest import make_chat_response, make_parse_response
+from tests.conftest import make_parse_response
 
 
 def make_reranked(chunk_id: str, content: str, dense_similarity: float | None = 0.8) -> RerankedResult:
