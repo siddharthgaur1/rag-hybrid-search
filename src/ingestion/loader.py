@@ -60,9 +60,15 @@ def load_document(path: Path, docs_root: Path) -> Document:
     """Load and normalize a single supported file into a Document.
 
     Raises:
-        ValueError: if the file extension isn't supported.
+        ValueError: if the path escapes docs_root or the extension isn't supported.
         FileNotFoundError: if the file doesn't exist.
     """
+    docs_root = docs_root.resolve()
+    path = path.resolve()
+    if not path.is_relative_to(docs_root):
+        # .resolve() collapses ".." before this check, so a body.file_path of
+        # "../../etc/passwd" or an absolute path can't escape docs_root.
+        raise ValueError(f"Path escapes docs root: {path}")
     if not path.exists():
         raise FileNotFoundError(f"Document not found: {path}")
     if path.suffix not in SUPPORTED_EXTENSIONS:
