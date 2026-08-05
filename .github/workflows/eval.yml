@@ -25,30 +25,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # This whole job needs a live OpenAI key: it ingests a corpus and runs a
+      # generation eval. Without one it cannot do anything meaningful, so it
+      # skips instead of failing - a red badge for "no secret configured" is a
+      # false signal about the code.
+      - name: Check for API key
+        id: guard
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_API_KEY not set - skipping the RAG eval gate."
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.guard.outputs.has_key == 'true'
         with:
           python-version: "3.11"
 
       - name: Install dependencies
+        if: steps.guard.outputs.has_key == 'true'
         run: pip install -r requirements.txt
 
+      # A YAML folded scalar re-indents continuation lines, which fed Python a
+      # leading space and raised IndentationError. A block scalar keeps it literal.
       - name: Ingest corpus
+        if: steps.guard.outputs.has_key == 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: python -c "
-          import asyncio;
-          from openai import AsyncOpenAI;
-          from src.ingestion.pipeline import ingest_corpus;
-          asyncio.run(ingest_corpus(AsyncOpenAI(), 'structure_aware'))"
+        run: |
+          python - <<'PY'
+          import asyncio
+          from openai import AsyncOpenAI
+          from src.ingestion.pipeline import ingest_corpus
+          asyncio.run(ingest_corpus(AsyncOpenAI(), 'structure_aware'))
+          PY
 
       - name: Run eval gate
+        if: steps.guard.outputs.has_key == 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m src.evaluation.run_gate --chunking-strategy structure_aware --slack
 
       - name: Post PR comment
-        if: always() && github.event_name == 'pull_request'
+        if: always() && steps.guard.outputs.has_key == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
